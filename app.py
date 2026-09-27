@@ -1,39 +1,17 @@
 import os
 import json
-import requests
 from flask import Flask, render_template_string, request, redirect, url_for, session, flash, jsonify
 from datetime import timedelta
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "super_secret_pterodactyl_key")
+app.secret_key = os.environ.get("SECRET_KEY", "super_secret_standalone_key")
 app.permanent_session_lifetime = timedelta(days=30)
 
 # Cookie isolation settings
-app.config['SESSION_COOKIE_NAME'] = 'ptero_panel_session'
+app.config['SESSION_COOKIE_NAME'] = 'standalone_panel_session'
 app.config['SESSION_COOKIE_PATH'] = '/'
 
 DB_FILE = "data.json"
-
-# --- PTERODACTYL API CONFIGURATION ---
-PTERODACTYL_URL = "https://ptero.kvxos.co.uk"
-# Replace with your actual Application API key from your real panel
-PTERODACTYL_API_KEY = os.environ.get("PTERO_API_KEY", "ptla_YOUR_API_KEY_HERE")
-
-def call_ptero_api(endpoint, method="GET", data=None):
-    headers = {
-        "Authorization": f"Bearer {PTERODACTYL_API_KEY}",
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-    url = f"{PTERODACTYL_URL}/api/application/{endpoint}"
-    try:
-        if method == "POST":
-            res = requests.post(url, headers=headers, json=data, timeout=10)
-        else:
-            res = requests.get(url, headers=headers, timeout=10)
-        return res.status_code, res.json()
-    except Exception as e:
-        return 500, {"error": str(e)}
 
 # --- EMBEDDED HTML TEMPLATES & CSS ---
 
@@ -42,7 +20,7 @@ BASE_HTML = """
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pterodactyl Panel Replica (API Integrated)</title>
+    <title>Standalone Cloud Panel</title>
     <style>
         body { background-color: #1e1e2f; color: #cfd8dc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
         .navbar { background-color: #151522; display: flex; justify-content: space-between; padding: 15px 30px; border-bottom: 1px solid #2a2a40; }
@@ -71,7 +49,7 @@ BASE_HTML = """
 </head>
 <body>
     <nav class="navbar">
-        <div class="nav-brand">pterodactyl API Replica</div>
+        <div class="nav-brand">Standalone Cloud Panel</div>
         <div class="nav-links">
             {% if session.get('user_id') %}
                 <a href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -103,7 +81,7 @@ BASE_HTML = """
 LOGIN_HTML = """
 <div class="auth-grid">
     <div class="auth-card">
-        <h2>Login to Replica</h2>
+        <h2>Login to Panel</h2>
         <form method="POST">
             <input type="hidden" name="action" value="login">
             <div class="form-group">
@@ -140,10 +118,10 @@ DASHBOARD_HTML = """
 <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
     <div>
         <h1>Welcome, {{ user.username }}</h1>
-        <p>Manage your real Pterodactyl servers provisioned through the API below.</p>
+        <p>Manage your standalone instances and workspace below.</p>
     </div>
     <form method="POST" action="{{ url_for('create_server') }}">
-        <button type="submit" class="btn btn-success">+ Provision Real Server via API</button>
+        <button type="submit" class="btn btn-success">+ Create New Instance</button>
     </form>
 </div>
 
@@ -152,27 +130,27 @@ DASHBOARD_HTML = """
     <div class="server-card">
         <div class="server-info">
             <h3>{{ server.name }}</h3>
-            <span class="badge status-online">Managed via API</span>
+            <span class="badge status-online">Running Standalone</span>
         </div>
         <div class="server-specs">
-            <span>Server ID Identifier: <strong>{{ server.identifier }}</strong></span>
-            <span>External Panel Link: <a href="https://ptero.kvxos.co.uk/server/{{ server.identifier }}" target="_blank" style="color: #34d399;">Open in Real Panel ↗</a></span>
+            <span>Instance ID: <strong>{{ server.id }}</strong></span>
+            <span>Created: <strong>Active Cloud Node</strong></span>
         </div>
     </div>
     {% endfor %}
 {% else %}
 <div class="alert alert-info">
-    You do not have any servers provisioned yet. Click the button above to create one automatically on your real panel!
+    You do not have any instances created yet. Click the button above to spin one up instantly!
 </div>
 {% endif %}
 """
 
 ADMIN_HTML = """
-<h2>Admin Area - API Status</h2>
+<h2>Admin Area - Standalone System</h2>
 <div class="admin-card">
-    <h3>Pterodactyl API Connection</h3>
-    <p>Target Panel: <code>{{ ptero_url }}</code></p>
-    <p>API Key Status: <code>{{ api_status }}</code></p>
+    <h3>System Status</h3>
+    <p>Database Engine: <code>Local JSON Store (data.json)</code></p>
+    <p>Hosting Mode: <code>Render Cloud 24/7</code></p>
 </div>
 """
 
@@ -184,7 +162,6 @@ def load_db():
     if not os.path.exists(DB_FILE):
         initial_data = {
             "users": [{"id": "1", "username": "admin", "password": "admin123", "is_admin": True, "servers": []}],
-            "settings": {"node_id": 1, "egg_id": 1, "location_id": 1}
         }
         save_db(initial_data)
     with open(DB_FILE, "r") as f:
@@ -256,46 +233,14 @@ def create_server():
     db = load_db()
     user = next((u for u in db["users"] if u["id"] == session["user_id"]), None)
     
-    server_data = {
-        "name": f"{user['username']}'s API Server",
-        "user": 1,
-        "egg": 1,
-        "docker_image": "python:3.13",
-        "startup": "python main.py",
-        "environment": {
-            "MAIN_FILE": "main.py"
-        },
-        "limits": {
-            "memory": 1024,
-            "swap": 0,
-            "disk": 10240,
-            "io": 500,
-            "cpu": 100
-        },
-        "feature_limits": {
-            "databases": 1,
-            "allocations": 1,
-            "backups": 1
-        },
-        "allocation": {
-            "default": 1
-        }
+    new_server = {
+        "id": str(len(user.get("servers", [])) + 1000),
+        "name": f"{user['username']}'s Cloud Instance"
     }
-
-    status, response = call_ptero_api("servers", method="POST", data=server_data)
+    user["servers"].append(new_server)
+    save_db(db)
+    flash("New cloud instance created successfully!", "success")
     
-    if status in [200, 201]:
-        attr = response.get("attributes", {})
-        user["servers"].append({
-            "name": attr.get("name"),
-            "identifier": attr.get("identifier"),
-            "uuid": attr.get("uuid")
-        })
-        save_db(db)
-        flash("Real Pterodactyl server successfully provisioned via API!", "success")
-    else:
-        flash(f"API Error creating server: {response}", "danger")
-        
     return redirect(url_for("dashboard"))
 
 @app.route("/admin")
@@ -303,10 +248,7 @@ def admin_panel():
     if not session.get("is_admin"):
         flash("Unauthorized access.", "danger")
         return redirect(url_for("dashboard"))
-    
-    status, _ = call_ptero_api("nodes")
-    api_status = "Connected & Active" if status == 200 else f"Failed (Code {status})"
-    return render_page(ADMIN_HTML, ptero_url=PTERODACTYL_URL, api_status=api_status)
+    return render_page(ADMIN_HTML)
 
 @app.route("/logout")
 def logout():
